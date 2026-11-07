@@ -877,8 +877,11 @@ impl Constructor for PyBaseException {
             .map(Into::into)
     }
 
-    fn py_new(_cls: &Py<PyType>, _args: FuncArgs, _vm: &VirtualMachine) -> PyResult<Self> {
-        unimplemented!("use slot_new")
+    fn py_new(cls: &Py<PyType>, args: FuncArgs, vm: &VirtualMachine) -> PyResult<Self> {
+        if cls.is(Self::class(&vm.ctx)) && !args.kwargs.is_empty() {
+            return Err(vm.new_type_error("BaseException() takes no keyword arguments"));
+        }
+        Ok(Self::new(args.args, vm))
     }
 }
 
@@ -2372,9 +2375,8 @@ pub(super) mod types {
 
     unsafe impl Traverse for PyOSError {
         fn traverse(&self, tracer_fn: &mut TraverseFn<'_>) {
-            // `self.base` is a `PyException` newtype whose `MaybeTraverse` is a
-            // no-op; reach the underlying `PyBaseException` so its traceback,
-            // cause, context and args are visited by the collector.
+            // Visit the underlying base's traceback, cause, context and args
+            // exactly once, alongside this payload's additional references.
             self.base.0.traverse(tracer_fn);
             if let Some(obj) = self.errno.deref() {
                 tracer_fn(obj);
